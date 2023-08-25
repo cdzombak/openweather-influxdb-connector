@@ -12,6 +12,7 @@ import (
 
 	"github.com/avast/retry-go"
 	owm "github.com/briandowns/openweathermap"
+	"github.com/cdzombak/libwx"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/mrflynn/go-aqi"
 )
@@ -123,12 +124,12 @@ func main() {
 	// nb. OpenWeatherMap reports pressure in hPa regardless of unit setting; hPa == millibar
 	pressureMillibar := wx.Main.Pressure
 	outdoorHumidity := wx.Main.Humidity // int, in %
-	dewpoint := DewPoint(outdoorTemp, outdoorHumidity)
-	windspeedMph := wx.Wind.Speed
+	dewpoint := libwx.DewPointF(libwx.TempF(outdoorTemp), libwx.RelHumidity(outdoorHumidity))
+	windSpeedMph := wx.Wind.Speed
 	windBearing := wx.Wind.Deg
 	visibilityMeters := wx.Visibility
 	visibilityMiles := float64(visibilityMeters) / 1609.34
-	windChill := WindChill(outdoorTemp, windspeedMph)
+	windChill := libwx.WindChillF(libwx.TempF(outdoorTemp), windSpeedMph)
 	cloudsPercent := wx.Clouds.All
 	// TODO(cdzombak): record weather condition codes from wx.Weather
 	//                 see https://openweathermap.org/current
@@ -136,7 +137,7 @@ func main() {
 	if *printData {
 		fmt.Printf("Weather at %s:\n", weatherTime)
 		fmt.Printf("\ttemperature: %.1f degF\n\tpressure: %.0f mb\n\thumidity: %d%%\n\tdew point: %.1f degF\n\twind: %.0f at %.1f mph\n\twind chill: %.1f degF\n\tvisibility: %.1f miles\n\tcloud cover: %d%%",
-			outdoorTemp, pressureMillibar, outdoorHumidity, dewpoint, windBearing, windspeedMph, windChill, visibilityMiles, cloudsPercent)
+			outdoorTemp, pressureMillibar, outdoorHumidity, dewpoint, windBearing, windSpeedMph, windChill, visibilityMiles, cloudsPercent)
 	}
 
 	if config.WriteEcobeeWeatherMeasurement {
@@ -156,10 +157,10 @@ func main() {
 						"barometric_pressure_mb":          pressureMillibar,
 						"barometric_pressure_inHg":        float64(pressureMillibar) / 33.864,
 						"dew_point":                       dewpoint,
-						"wind_speed":                      windspeedMph,
+						"wind_speed":                      windSpeedMph,
 						"wind_bearing":                    windBearing,
 						"visibility_mi":                   visibilityMiles,
-						"recommended_max_indoor_humidity": IndoorHumidityRecommendation(outdoorTemp),
+						"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(libwx.TempF(outdoorTemp)),
 						"wind_chill_f":                    windChill,
 					},
 					weatherTime,
@@ -186,20 +187,20 @@ func main() {
 				},
 				map[string]interface{}{
 					"temp_f":                          outdoorTemp,
-					"temp_c":                          TempFToC(outdoorTemp),
+					"temp_c":                          libwx.TempFToC(libwx.TempF(outdoorTemp)),
 					"rel_humidity":                    outdoorHumidity,
 					"feels_like_f":                    feelsLikeTemp,
-					"feels_like_c":                    TempFToC(feelsLikeTemp),
+					"feels_like_c":                    libwx.TempFToC(libwx.TempF(feelsLikeTemp)),
 					"barometric_pressure_mb":          pressureMillibar,
 					"barometric_pressure_inHg":        float64(pressureMillibar) / 33.864,
 					"dew_point_f":                     dewpoint,
-					"dew_point_c":                     TempFToC(dewpoint),
-					"wind_speed_mph":                  windspeedMph,
+					"dew_point_c":                     libwx.TempFToC(dewpoint),
+					"wind_speed_mph":                  windSpeedMph,
 					"wind_bearing":                    windBearing,
 					"visibility_mi":                   visibilityMiles,
-					"recommended_max_indoor_humidity": IndoorHumidityRecommendation(outdoorTemp),
+					"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(libwx.TempF(outdoorTemp)),
 					"wind_chill_f":                    windChill,
-					"wind_chill_c":                    TempFToC(windChill),
+					"wind_chill_c":                    libwx.TempFToC(windChill),
 					"cloud_cover":                     cloudsPercent,
 				},
 				weatherTime,
