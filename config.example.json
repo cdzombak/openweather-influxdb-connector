@@ -1,0 +1,16 @@
+{
+  "api_key": "YOUR_API_KEY_HERE",
+  "wx_measurement_name": "weather",
+  "pollution_measurement_name": "pollution",
+  "write_ecobee_wx_measurement": true,
+  "ecobee_thermostat_name": "",
+  "lat": 42.2808,
+  "lon": -83.7430,
+  "influx_server": "http://192.168.1.2:8086",
+  "influx_bucket": "MYHOME",
+  "influx_user": "",
+  "influx_password": "",
+  "influx_token": "",
+  "influx_org": "",
+  "influx_health_check_disabled": false
+}
