@@ -330,3 +330,32 @@ jobs:
 
           install: 'bin.install "${{ needs.meta.outputs.bin_name }}"'
           test: 'assert_match("${{ needs.meta.outputs.bin_version }}", shell_output("#{bin}/${{ needs.meta.outputs.bin_name }} -version"))'
+
+  ntfy:
+    name: Ntfy
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    needs: [meta, lint, docker, binaries, release, aptly, homebrew]
+    steps:
+      - name: Send success notification
+        uses: niniyas/ntfy-action@master
+        if: ${{ !contains(needs.*.result, 'failure') && (needs.meta.outputs.is_release == 'true' || needs.meta.outputs.is_prerelease == 'true') }}
+        with:
+          url: "https://ntfy.cdzombak.net"
+          topic: "gha-builds"
+          priority: 3
+          headers: '{"authorization": "Bearer ${{ secrets.NTFY_TOKEN }}"}'
+          tags: white_check_mark
+          title: ${{ github.event.repository.name }} ${{ needs.meta.outputs.bin_version }} available
+          details: ${{ github.event.repository.name }} version ${{ needs.meta.outputs.bin_version }} is now available.
+      - name: Send failure notification
+        uses: niniyas/ntfy-action@master
+        if: ${{ contains(needs.*.result, 'failure') }}
+        with:
+          url: "https://ntfy.cdzombak.net"
+          topic: "gha-builds"
+          priority: 3
+          headers: '{"authorization": "Bearer ${{ secrets.NTFY_TOKEN }}"}'
+          tags: no_entry
+          title: ${{ github.event.repository.name }} ${{ needs.meta.outputs.bin_version }} build failed
+          details: Build failed for ${{ github.event.repository.name }} version ${{ needs.meta.outputs.bin_version }}.
