@@ -69,7 +69,7 @@ sudo apt-get install openweather-influxdb-connector
 
 ### Manual installation from build artifacts
 
-Pre-built binaries for Linux and macOS on various architectures are downloadable from each [GitHub Release](https://github.com/cdzombak/mastodon-post/releases). Debian packages for each release are available as well.
+Pre-built binaries for Linux and macOS on various architectures are downloadable from each [GitHub Release](https://github.com/cdzombak/openweather-influxdb-connector/releases). Debian packages for each release are available as well.
 
 ### Build and install locally
 
