@@ -1,0 +1,6 @@
+-s dir
+--name openweather-influxdb-connector
+--description "Write current weather conditions from OpenWeatherMap to InfluxDB"
+--url "https://github.com/cdzombak/openweather-influxdb-connector"
+--maintainer "Chris Dzombak <https://www.dzombak.com>"
+--license MIT

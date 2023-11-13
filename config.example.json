@@ -1,5 +1,5 @@
 {
-  "api_key": "YOUR_API_KEY_HERE",
+  "api_key": "your OpenWeatherMap API key here",
   "wx_measurement_name": "weather",
   "pollution_measurement_name": "pollution",
   "write_ecobee_wx_measurement": true,

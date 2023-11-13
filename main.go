@@ -32,6 +32,7 @@ const (
 	ecobeeWeatherMeasurementName = "ecobee_weather"
 )
 
+// Config describes the configuration for the openweather-influxdb-connector program.
 type Config struct {
 	APIKey                        string  `json:"api_key"`
 	Latitude                      float64 `json:"lat"`
@@ -51,7 +52,7 @@ type Config struct {
 
 func main() {
 	configFile := flag.String("config", "./config.json", "Configuration JSON file.")
-	printData := flag.Bool("printData", false, "Print weather.pollution data to stdout.")
+	printData := flag.Bool("printData", false, "Print weather/pollution data to stdout.")
 	printVersion := flag.Bool("version", false, "Print version and exit.")
 	flag.Parse()
 
@@ -101,7 +102,7 @@ func main() {
 			log.Fatalf("InfluxDB did not pass health check: status %s; message '%s'", health.Status, *health.Message)
 		}
 	}
-	influxWriteApi := influxClient.WriteAPIBlocking(config.InfluxOrg, config.InfluxBucket)
+	influxWriteAPI := influxClient.WriteAPIBlocking(config.InfluxOrg, config.InfluxBucket)
 
 	configCoords := owm.Coordinates{
 		Longitude: config.Longitude,
@@ -144,7 +145,7 @@ func main() {
 		if err := retry.Do(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
 			defer cancel()
-			err := influxWriteApi.WritePoint(ctx,
+			err := influxWriteAPI.WritePoint(ctx,
 				influxdb2.NewPoint(
 					ecobeeWeatherMeasurementName,
 					map[string]string{
@@ -177,7 +178,7 @@ func main() {
 	if err := retry.Do(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
 		defer cancel()
-		err := influxWriteApi.WritePoint(ctx,
+		err := influxWriteAPI.WritePoint(ctx,
 			influxdb2.NewPoint(
 				config.WeatherMeasurementName,
 				map[string]string{
@@ -256,7 +257,7 @@ func main() {
 	if err := retry.Do(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
 		defer cancel()
-		err := influxWriteApi.WritePoint(ctx,
+		err := influxWriteAPI.WritePoint(ctx,
 			influxdb2.NewPoint(
 				config.PollutionMeasurementName,
 				map[string]string{
