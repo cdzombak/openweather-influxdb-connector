@@ -83,7 +83,7 @@ cp out/openweather-influxdb-connector $INSTALL_DIR
 
 ## Docker images
 
-Docker images are available for a variety of Linux architectures from [Docker Hub](https://hub.docker.com/r/cdzombak/mastodon-post) and [GHCR](https://github.com/cdzombak/unshorten/pkgs/container/mastodon-post). Images are based on the `scratch` image and are as small as possible.
+Docker images are available for a variety of Linux architectures from [Docker Hub](https://hub.docker.com/r/cdzombak/openweather-influxdb-connector) and [GHCR](https://github.com/cdzombak/unshorten/pkgs/container/openweather-influxdb-connector). Images are based on the `scratch` image and are as small as possible.
 
 Run them via, for example:
 
