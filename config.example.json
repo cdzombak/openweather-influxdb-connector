@@ -5,7 +5,7 @@
   "write_ecobee_wx_measurement": true,
   "ecobee_thermostat_name": "",
   "lat": 42.2808,
-  "lon": -83.7430,
+  "lon": -83.743,
   "influx_server": "http://192.168.1.2:8086",
   "influx_bucket": "MYHOME",
   "influx_user": "",
