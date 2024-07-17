@@ -130,16 +130,22 @@ func main() {
 	windBearing := wx.Wind.Deg
 	visibilityMeters := libwx.Meter(wx.Visibility)
 	visibilityMiles := visibilityMeters.Miles()
-	windChill := libwx.WindChillF(outdoorTemp, windSpeedMph)
 	cloudsPercent := wx.Clouds.All
 	// TODO(cdzombak): record weather condition codes from wx.Weather
 	//                 see https://openweathermap.org/current
 
 	if *printData {
-		fmt.Printf("Weather at %s:\n", weatherTime)
-		fmt.Printf("\ttemperature: %.1f degF\n\tpressure: %.0f mb\n\thumidity: %d%%\n\tdew point: %.1f degF\n\twind: %.0f at %.1f mph\n\twind chill: %.1f degF\n\tvisibility: %.1f miles\n\tcloud cover: %d%%",
-			outdoorTemp, pressureMillibar, outdoorHumidity, dewpoint, windBearing, windSpeedMph, windChill, visibilityMiles, cloudsPercent)
+		fmt.Printf("Conditions at %s:\n", weatherTime)
+		fmt.Printf("\ttemperature: %.1f degF\n\tpressure: %.0f mb\n\thumidity: %d%%\n\tdew point: %.1f degF\n\twind: %.0f at %.1f mph\n\tvisibility: %.1f miles\n\tcloud cover: %d%%",
+			outdoorTemp, pressureMillibar, outdoorHumidity, dewpoint, windBearing, windSpeedMph, visibilityMiles, cloudsPercent)
 	}
+
+	heatIdxF := libwx.HeatIndexF(outdoorTemp, outdoorHumidity)
+	heatIdxC := libwx.HeatIndexC(outdoorTemp.C(), outdoorHumidity)
+	windChillF, windChillFErr := libwx.WindChillFWithValidation(outdoorTemp, windSpeedMph)
+	windChillC, windChillCErr := libwx.WindChillCWithValidation(outdoorTemp.C(), windSpeedMph)
+	wetBulbTempF, wetBulbTempFErr := libwx.WetBulbF(outdoorTemp, outdoorHumidity)
+	wetBulbTempC, wetBulbTempCErr := libwx.WetBulbC(outdoorTemp.C(), outdoorHumidity)
 
 	if config.WriteEcobeeWeatherMeasurement {
 		if err := retry.Do(func() error {
@@ -162,7 +168,7 @@ func main() {
 						"wind_bearing":                    windBearing,
 						"visibility_mi":                   visibilityMiles.Unwrap(),
 						"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
-						"wind_chill_f":                    windChill.Unwrap(),
+						"wind_chill_f":                    windChillF.Unwrap(),
 					},
 					weatherTime,
 				))
@@ -178,6 +184,38 @@ func main() {
 	if err := retry.Do(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
 		defer cancel()
+		fields := map[string]interface{}{
+			"temp_f":                          outdoorTemp.Unwrap(),
+			"temp_c":                          outdoorTemp.C().Unwrap(),
+			"rel_humidity":                    outdoorHumidity.Unwrap(),
+			"feels_like_f":                    feelsLikeTemp.Unwrap(),
+			"feels_like_c":                    feelsLikeTemp.C().Unwrap(),
+			"barometric_pressure_mb":          pressureMillibar.Unwrap(),
+			"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
+			"dew_point_f":                     dewpoint.Unwrap(),
+			"dew_point_c":                     dewpoint.C().Unwrap(),
+			"wind_speed_mph":                  windSpeedMph.Unwrap(),
+			"wind_bearing":                    windBearing,
+			"visibility_mi":                   visibilityMiles.Unwrap(),
+			"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
+			"cloud_cover":                     cloudsPercent,
+			"heat_index_f":                    heatIdxF.Unwrap(),
+			"heat_index_c":                    heatIdxC.Unwrap(),
+		}
+
+		if windChillFErr == nil {
+			fields["wind_chill_f"] = windChillF.Unwrap()
+		}
+		if windChillCErr == nil {
+			fields["wind_chill_c"] = windChillC.Unwrap()
+		}
+		if wetBulbTempFErr == nil {
+			fields["wet_bulb_f"] = wetBulbTempF.Unwrap()
+		}
+		if wetBulbTempCErr == nil {
+			fields["wet_bulb_c"] = wetBulbTempC.Unwrap()
+		}
+
 		err := influxWriteAPI.WritePoint(ctx,
 			influxdb2.NewPoint(
 				config.WeatherMeasurementName,
@@ -186,24 +224,7 @@ func main() {
 					latTag:    strconv.FormatFloat(config.Latitude, 'f', 3, 64),
 					lonTag:    strconv.FormatFloat(config.Longitude, 'f', 3, 64),
 				},
-				map[string]interface{}{
-					"temp_f":                          outdoorTemp.Unwrap(),
-					"temp_c":                          outdoorTemp.C().Unwrap(),
-					"rel_humidity":                    outdoorHumidity.Unwrap(),
-					"feels_like_f":                    feelsLikeTemp.Unwrap(),
-					"feels_like_c":                    feelsLikeTemp.C().Unwrap(),
-					"barometric_pressure_mb":          pressureMillibar.Unwrap(),
-					"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
-					"dew_point_f":                     dewpoint.Unwrap(),
-					"dew_point_c":                     dewpoint.C().Unwrap(),
-					"wind_speed_mph":                  windSpeedMph.Unwrap(),
-					"wind_bearing":                    windBearing,
-					"visibility_mi":                   visibilityMiles.Unwrap(),
-					"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
-					"wind_chill_f":                    windChill.Unwrap(),
-					"wind_chill_c":                    windChill.C().Unwrap(),
-					"cloud_cover":                     cloudsPercent,
-				},
+				fields,
 				weatherTime,
 			))
 		if err != nil {

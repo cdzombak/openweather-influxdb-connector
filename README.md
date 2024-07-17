@@ -38,7 +38,7 @@ If the config fields `write_ecobee_wx_measurement` and `ecobee_thermostat_name` 
 
 This mode aims to be a bug-for-bug compatible drop in for weather measurements written by [ecobee_influx_connector](https://github.com/cdzombak/ecobee_influx_connector).
 
-These measurements are written _in addition_ to the usual weather & pollution measurements written by openweather-influxdb-connector.
+The `ecobee_weather` measurement is written _in addition_ to the usual weather & pollution measurements described above.
 
 ## Installation
 
