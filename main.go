@@ -140,8 +140,8 @@ func main() {
 			outdoorTemp, pressureMillibar, outdoorHumidity, dewpoint, windBearing, windSpeedMph, visibilityMiles, cloudsPercent)
 	}
 
-	heatIdxF := libwx.HeatIndexF(outdoorTemp, outdoorHumidity)
-	heatIdxC := libwx.HeatIndexC(outdoorTemp.C(), outdoorHumidity)
+	heatIdxF, heatIdxFErr := libwx.HeatIndexFWithValidation(outdoorTemp, outdoorHumidity)
+	heatIdxC, heatIdxCErr := libwx.HeatIndexCWithValidation(outdoorTemp.C(), outdoorHumidity)
 	windChillF, windChillFErr := libwx.WindChillFWithValidation(outdoorTemp, windSpeedMph)
 	windChillC, windChillCErr := libwx.WindChillCWithValidation(outdoorTemp.C(), windSpeedMph)
 	wetBulbTempF, wetBulbTempFErr := libwx.WetBulbF(outdoorTemp, outdoorHumidity)
@@ -199,10 +199,14 @@ func main() {
 			"visibility_mi":                   visibilityMiles.Unwrap(),
 			"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
 			"cloud_cover":                     cloudsPercent,
-			"heat_index_f":                    heatIdxF.Unwrap(),
-			"heat_index_c":                    heatIdxC.Unwrap(),
 		}
 
+		if heatIdxFErr == nil {
+			fields["heat_index_f"] = heatIdxF.Unwrap()
+		}
+		if heatIdxCErr == nil {
+			fields["heat_index_c"] = heatIdxC.Unwrap()
+		}
 		if windChillFErr == nil {
 			fields["wind_chill_f"] = windChillF.Unwrap()
 		}
