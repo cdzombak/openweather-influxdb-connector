@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/briandowns/openweathermap v0.19.0
+	github.com/briandowns/openweathermap v0.21.1
 	github.com/cdzombak/libwx v1.2.0
 	github.com/influxdata/influxdb-client-go/v2 v2.14.0
 	github.com/mrflynn/go-aqi v0.0.9
