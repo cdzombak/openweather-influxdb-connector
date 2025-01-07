@@ -132,7 +132,7 @@ func main() {
 	visibilityMiles := visibilityMeters.Miles()
 	cloudsPercent := wx.Clouds.All
 	// TODO(cdzombak): record weather condition codes from wx.Weather
-	//                 see https://openweathermap.org/current
+	//                 see https://openweathermap.org/weather-conditions#Weather-Condition-Codes-2
 
 	if *printData {
 		fmt.Printf("Conditions at %s:\n", weatherTime)
