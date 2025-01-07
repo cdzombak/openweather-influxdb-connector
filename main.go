@@ -185,20 +185,22 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
 		defer cancel()
 		fields := map[string]interface{}{
-			"temp_f":                          outdoorTemp.Unwrap(),
-			"temp_c":                          outdoorTemp.C().Unwrap(),
-			"rel_humidity":                    outdoorHumidity.Unwrap(),
-			"feels_like_f":                    feelsLikeTemp.Unwrap(),
-			"feels_like_c":                    feelsLikeTemp.C().Unwrap(),
-			"barometric_pressure_mb":          pressureMillibar.Unwrap(),
-			"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
-			"dew_point_f":                     dewpoint.Unwrap(),
-			"dew_point_c":                     dewpoint.C().Unwrap(),
-			"wind_speed_mph":                  windSpeedMph.Unwrap(),
-			"wind_bearing":                    windBearing,
-			"visibility_mi":                   visibilityMiles.Unwrap(),
-			"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
-			"cloud_cover":                     cloudsPercent,
+			"temp_f":                            outdoorTemp.Unwrap(),
+			"temp_c":                            outdoorTemp.C().Unwrap(),
+			"rel_humidity":                      outdoorHumidity.Unwrap(),
+			"feels_like_f":                      feelsLikeTemp.Unwrap(),
+			"feels_like_c":                      feelsLikeTemp.C().Unwrap(),
+			"barometric_pressure_mb":            pressureMillibar.Unwrap(),
+			"barometric_pressure_inHg":          pressureMillibar.InHg().Unwrap(),
+			"dew_point_f":                       dewpoint.Unwrap(),
+			"dew_point_c":                       dewpoint.C().Unwrap(),
+			"wind_speed_mph":                    windSpeedMph.Unwrap(),
+			"wind_speed_kt":                     windSpeedMph.Knots().Unwrap(),
+			"wind_bearing":                      windBearing,
+			"visibility_mi":                     visibilityMiles.Unwrap(),
+			"recommended_max_indoor_humidity_f": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
+			"recommended_max_indoor_humidity_c": libwx.IndoorHumidityRecommendationC(outdoorTemp.C()).Unwrap(),
+			"cloud_cover":                       cloudsPercent,
 		}
 
 		if heatIdxFErr == nil {
