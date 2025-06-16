@@ -6,8 +6,8 @@ github.com/avast/retry-go v3.0.0+incompatible/go.mod h1:XtSnn+n/sHqQIpZ10K1qAevB
 github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvFv1sNto9p6w=
 github.com/briandowns/openweathermap v0.21.1 h1:TPbuixuF+aGJP1mpgTNny6eUkdbvj7gqODGXkwhss48=
 github.com/briandowns/openweathermap v0.21.1/go.mod h1:0GLnknqicWxXnGi1IqoOaZIw+kIe5hkt+YM5WY3j8+0=
-github.com/cdzombak/libwx v1.3.1 h1:r9E7sWrSJAXm89rZi/lCRG4fOW2PUermoXDatewtr9I=
-github.com/cdzombak/libwx v1.3.1/go.mod h1:V7luoFKjP+d+bvVF+BDAU4weSFtYHUOPseapzkVDWt4=
+github.com/cdzombak/libwx v1.4.0 h1:ROWviMTQ3q/Gew/GEDPOZt5283rHYYRMh0Lu/uEnQAs=
+github.com/cdzombak/libwx v1.4.0/go.mod h1:V7luoFKjP+d+bvVF+BDAU4weSFtYHUOPseapzkVDWt4=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
