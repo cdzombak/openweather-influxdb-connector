@@ -22,7 +22,6 @@ import (
 var version = "<dev>"
 
 const (
-	influxTimeout    = 3 * time.Second
 	influxAttempts   = 3
 	influxRetryDelay = 1 * time.Second
 
@@ -56,6 +55,7 @@ type Config struct {
 	InfluxPass                    string     `json:"influx_password,omitempty"`
 	InfluxToken                   string     `json:"influx_token,omitempty"`
 	InfluxBucket                  string     `json:"influx_bucket"`
+	InfluxTimeout                 int        `json:"influx_timeout"`
 	InfluxHealthCheckDisabled     bool       `json:"influx_health_check_disabled"`
 	WeatherMeasurementName        string     `json:"wx_measurement_name"`
 	WriteEcobeeWeatherMeasurement bool       `json:"write_ecobee_weather_measurement"`
@@ -108,6 +108,10 @@ func main() {
 	// Setup InfluxDB if configured
 	var influxClient influxdb2.Client
 	var influxWriteAPI api.WriteAPIBlocking
+	influxTimeout := time.Duration(config.InfluxTimeout) * time.Second
+	if config.InfluxTimeout == 0 {
+		influxTimeout = 3 * time.Second
+	}
 	if influxConfigured {
 		authString := ""
 		if config.InfluxUser != "" || config.InfluxPass != "" {
