@@ -140,6 +140,10 @@ func main() {
 			opts.SetPassword(config.MQTT.Password)
 		}
 		opts.SetClientID("openweather-influxdb-connector")
+
+		if config.MQTT.Timeout == 0 {
+			config.MQTT.Timeout = 3
+		}
 		opts.SetConnectTimeout(time.Duration(config.MQTT.Timeout) * time.Second)
 
 		mqttClient = mqtt.NewClient(opts)
