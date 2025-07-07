@@ -1,6 +1,6 @@
 # openweather-influxdb-connector
 
-Write current weather conditions from OpenWeatherMap to InfluxDB.
+Write current weather conditions from OpenWeatherMap to InfluxDB and/or MQTT.
 
 ## Usage
 
@@ -11,7 +11,7 @@ openweather-influxdb-connector -config /path/to/config.json [-printData]
 ### Options
 
 - `-config`: Path to the configuration JSON file. Required.
-- `-visibility`: Print weather/pollution data to stdout.
+- `-print`: Print weather/pollution data to stdout.
 - `-help`: Print help and exit.
 - `-version`: Print version and exit.
 
@@ -23,6 +23,9 @@ Configuration is provided by a JSON file, which contains the following fields:
 - `wx_measurement_name`: Name of the weather measurement to write to InfluxDB.
 - `pollution_measurement_name`: Name of the pollution measurement to write to InfluxDB.
 - `lat`, `lon`: The location to look up weather for.
+
+#### InfluxDB Configuration
+
 - `influx_server`: InfluxDB server.
 - `influx_bucket`: InfluxDB bucket.
 - `influx_user`, `influx_password`: InfluxDB credentials.
@@ -30,15 +33,41 @@ Configuration is provided by a JSON file, which contains the following fields:
 - `influx_org`: InfluxDB organization.
 - `influx_health_check_disabled`: If set to `true`, skip checking the Influx server's health before fetching weather & attempting to write to Influx.
 
+#### MQTT Configuration
+
+- `mqtt`: Object containing MQTT configuration:
+  - `enabled`: Set to `true` to enable MQTT output.
+  - `server`: MQTT broker hostname or IP address.
+  - `port`: MQTT broker port (typically 1883).
+  - `username`: MQTT username (optional).
+  - `password`: MQTT password (optional).
+  - `topic_root`: Base topic for MQTT messages. Weather data will be published to `{topic_root}/weather` and pollution data to `{topic_root}/pollution`.
+  - `timeout`: Connection timeout in seconds.
+
+**Note:** At least one output (InfluxDB or MQTT) must be configured. You can enable both to send data to multiple destinations.
+
 A sample config file is included in this repository to help you get started: [`config.example.json`](https://github.com/cdzombak/openweather-influxdb-connector/blob/main/config.example.json).
 
 ### Compatibility with [ecobee_influx_connector](https://github.com/cdzombak/ecobee_influx_connector)
 
-If the config fields `write_ecobee_wx_measurement` and `ecobee_thermostat_name` are set, the program will write the measurement `ecobee_weather` using the same field names and types as [ecobee_influx_connector](https://github.com/cdzombak/ecobee_influx_connector) writes.
+If the config fields `write_ecobee_wx_measurement` and `ecobee_thermostat_name` are set, the program will write the measurement `ecobee_weather` to InfluxDB using the same field names and types as [ecobee_influx_connector](https://github.com/cdzombak/ecobee_influx_connector) writes.
 
 This mode aims to be a bug-for-bug compatible drop in for weather measurements written by [ecobee_influx_connector](https://github.com/cdzombak/ecobee_influx_connector).
 
-The `ecobee_weather` measurement is written _in addition_ to the usual weather & pollution measurements described above.
+The `ecobee_weather` measurement is written _in addition_ to the usual weather & pollution measurements described above. This compatibility mode is only available for InfluxDB output.
+
+### MQTT Output Format
+
+When MQTT is enabled, data is published as JSON to the configured topics:
+
+- Weather data: `{topic_root}/weather`
+- Pollution data: `{topic_root}/pollution` (if pollution measurement is configured)
+
+Each JSON message includes all the measurement fields plus metadata:
+- `source`: Always "openweathermap"
+- `latitude`: Location latitude
+- `longitude`: Location longitude
+- `timestamp`: Unix timestamp of the measurement
 
 ## Installation
 

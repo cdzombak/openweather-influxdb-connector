@@ -13,7 +13,9 @@ import (
 	"github.com/avast/retry-go"
 	owm "github.com/briandowns/openweathermap"
 	"github.com/cdzombak/libwx"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	"github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/mrflynn/go-aqi"
 )
 
@@ -32,27 +34,39 @@ const (
 	ecobeeWeatherMeasurementName = "ecobee_weather"
 )
 
+// MQTTConfig describes the MQTT configuration.
+type MQTTConfig struct {
+	Enabled   bool   `json:"enabled"`
+	Server    string `json:"server"`
+	Port      int    `json:"port"`
+	Username  string `json:"username,omitempty"`
+	Password  string `json:"password,omitempty"`
+	TopicRoot string `json:"topic_root"`
+	Timeout   int    `json:"timeout"`
+}
+
 // Config describes the configuration for the openweather-influxdb-connector program.
 type Config struct {
-	APIKey                        string  `json:"api_key"`
-	Latitude                      float64 `json:"lat"`
-	Longitude                     float64 `json:"lon"`
-	InfluxServer                  string  `json:"influx_server"`
-	InfluxOrg                     string  `json:"influx_org,omitempty"`
-	InfluxUser                    string  `json:"influx_user,omitempty"`
-	InfluxPass                    string  `json:"influx_password,omitempty"`
-	InfluxToken                   string  `json:"influx_token,omitempty"`
-	InfluxBucket                  string  `json:"influx_bucket"`
-	InfluxHealthCheckDisabled     bool    `json:"influx_health_check_disabled"`
-	WeatherMeasurementName        string  `json:"wx_measurement_name"`
-	WriteEcobeeWeatherMeasurement bool    `json:"write_ecobee_weather_measurement"`
-	EcobeeThermostatName          string  `json:"ecobee_thermostat_name"`
-	PollutionMeasurementName      string  `json:"pollution_measurement_name"`
+	APIKey                        string     `json:"api_key"`
+	Latitude                      float64    `json:"lat"`
+	Longitude                     float64    `json:"lon"`
+	InfluxServer                  string     `json:"influx_server"`
+	InfluxOrg                     string     `json:"influx_org,omitempty"`
+	InfluxUser                    string     `json:"influx_user,omitempty"`
+	InfluxPass                    string     `json:"influx_password,omitempty"`
+	InfluxToken                   string     `json:"influx_token,omitempty"`
+	InfluxBucket                  string     `json:"influx_bucket"`
+	InfluxHealthCheckDisabled     bool       `json:"influx_health_check_disabled"`
+	WeatherMeasurementName        string     `json:"wx_measurement_name"`
+	WriteEcobeeWeatherMeasurement bool       `json:"write_ecobee_weather_measurement"`
+	EcobeeThermostatName          string     `json:"ecobee_thermostat_name"`
+	PollutionMeasurementName      string     `json:"pollution_measurement_name"`
+	MQTT                          MQTTConfig `json:"mqtt"`
 }
 
 func main() {
 	configFile := flag.String("config", "./config.json", "Configuration JSON file.")
-	printData := flag.Bool("printData", false, "Print weather/pollution data to stdout.")
+	printData := flag.Bool("print", false, "Print weather/pollution data to stdout.")
 	printVersion := flag.Bool("version", false, "Print version and exit.")
 	flag.Parse()
 
@@ -84,25 +98,56 @@ func main() {
 		log.Fatal("ecobee_thermostat_name must be set in the config file if write_ecobee_wx_measurement is set.")
 	}
 
-	authString := ""
-	if config.InfluxUser != "" || config.InfluxPass != "" {
-		authString = fmt.Sprintf("%s:%s", config.InfluxUser, config.InfluxPass)
-	} else if config.InfluxToken != "" {
-		authString = config.InfluxToken
+	// Validate at least one output is configured
+	influxConfigured := config.InfluxServer != "" && config.InfluxBucket != ""
+	mqttConfigured := config.MQTT.Enabled && config.MQTT.Server != ""
+	if !influxConfigured && !mqttConfigured {
+		log.Fatal("At least one output (InfluxDB or MQTT) must be configured.")
 	}
-	influxClient := influxdb2.NewClient(config.InfluxServer, authString)
-	if !config.InfluxHealthCheckDisabled {
-		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
-		defer cancel()
-		health, err := influxClient.Health(ctx)
-		if err != nil {
-			log.Fatalf("Failed to check InfluxDB health: %v", err)
+
+	// Setup InfluxDB if configured
+	var influxClient influxdb2.Client
+	var influxWriteAPI api.WriteAPIBlocking
+	if influxConfigured {
+		authString := ""
+		if config.InfluxUser != "" || config.InfluxPass != "" {
+			authString = fmt.Sprintf("%s:%s", config.InfluxUser, config.InfluxPass)
+		} else if config.InfluxToken != "" {
+			authString = config.InfluxToken
 		}
-		if health.Status != "pass" {
-			log.Fatalf("InfluxDB did not pass health check: status %s; message '%s'", health.Status, *health.Message)
+		influxClient = influxdb2.NewClient(config.InfluxServer, authString)
+		if !config.InfluxHealthCheckDisabled {
+			ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
+			defer cancel()
+			health, err := influxClient.Health(ctx)
+			if err != nil {
+				log.Fatalf("Failed to check InfluxDB health: %v", err)
+			}
+			if health.Status != "pass" {
+				log.Fatalf("InfluxDB did not pass health check: status %s; message '%s'", health.Status, *health.Message)
+			}
 		}
+		influxWriteAPI = influxClient.WriteAPIBlocking(config.InfluxOrg, config.InfluxBucket)
 	}
-	influxWriteAPI := influxClient.WriteAPIBlocking(config.InfluxOrg, config.InfluxBucket)
+
+	// Setup MQTT if configured
+	var mqttClient mqtt.Client
+	if mqttConfigured {
+		opts := mqtt.NewClientOptions()
+		opts.AddBroker(fmt.Sprintf("tcp://%s:%d", config.MQTT.Server, config.MQTT.Port))
+		if config.MQTT.Username != "" {
+			opts.SetUsername(config.MQTT.Username)
+			opts.SetPassword(config.MQTT.Password)
+		}
+		opts.SetClientID("openweather-influxdb-connector")
+		opts.SetConnectTimeout(time.Duration(config.MQTT.Timeout) * time.Second)
+
+		mqttClient = mqtt.NewClient(opts)
+		if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
+			log.Fatalf("Failed to connect to MQTT broker: %v", token.Error())
+		}
+		defer mqttClient.Disconnect(250)
+	}
 
 	configCoords := owm.Coordinates{
 		Longitude: config.Longitude,
@@ -149,29 +194,97 @@ func main() {
 	wetBulbTempC, wetBulbTempCErr := libwx.WetBulbC(outdoorTemp.C(), outdoorHumidity)
 
 	if config.WriteEcobeeWeatherMeasurement {
+		ecobeeData := map[string]interface{}{
+			"outdoor_temp":                    outdoorTemp.Unwrap(),
+			"outdoor_humidity":                outdoorHumidity.Unwrap(),
+			"barometric_pressure_mb":          pressureMillibar.Unwrap(),
+			"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
+			"dew_point":                       dewpoint.Unwrap(),
+			"wind_speed":                      windSpeedMph.Unwrap(),
+			"wind_bearing":                    windBearing,
+			"visibility_mi":                   visibilityMiles.Unwrap(),
+			"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
+			"wind_chill_f":                    windChillF.Unwrap(),
+		}
+
+		// Write to InfluxDB if configured (ecobee compatibility is InfluxDB-only)
+		if influxConfigured {
+			if err := retry.Do(func() error {
+				ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
+				defer cancel()
+				err := influxWriteAPI.WritePoint(ctx,
+					influxdb2.NewPoint(
+						ecobeeWeatherMeasurementName,
+						map[string]string{
+							thermostatNameTag: config.EcobeeThermostatName,
+							sourceTag:         source,
+						},
+						ecobeeData,
+						weatherTime,
+					))
+				if err != nil {
+					return err
+				}
+				return nil
+			}, retry.Attempts(influxAttempts), retry.Delay(influxRetryDelay)); err != nil {
+				log.Printf("Failed to write %s to influx: %s", ecobeeWeatherMeasurementName, err)
+			}
+		}
+	}
+
+	// Prepare weather data
+	weatherData := map[string]interface{}{
+		"temp_f":                          outdoorTemp.Unwrap(),
+		"temp_c":                          outdoorTemp.C().Unwrap(),
+		"rel_humidity":                    outdoorHumidity.Unwrap(),
+		"abs_humidity":                    absHumidity.Unwrap(),
+		"feels_like_f":                    feelsLikeTemp.Unwrap(),
+		"feels_like_c":                    feelsLikeTemp.C().Unwrap(),
+		"barometric_pressure_mb":          pressureMillibar.Unwrap(),
+		"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
+		"dew_point_f":                     dewpoint.Unwrap(),
+		"dew_point_c":                     dewpoint.C().Unwrap(),
+		"wind_speed_mph":                  windSpeedMph.Unwrap(),
+		"wind_speed_kt":                   windSpeedMph.Knots().Unwrap(),
+		"wind_bearing":                    windBearing,
+		"visibility_mi":                   visibilityMiles.Unwrap(),
+		"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
+		"cloud_cover":                     cloudsPercent,
+	}
+
+	if heatIdxFErr == nil {
+		weatherData["heat_index_f"] = heatIdxF.Unwrap()
+	}
+	if heatIdxCErr == nil {
+		weatherData["heat_index_c"] = heatIdxC.Unwrap()
+	}
+	if windChillFErr == nil {
+		weatherData["wind_chill_f"] = windChillF.Unwrap()
+	}
+	if windChillCErr == nil {
+		weatherData["wind_chill_c"] = windChillC.Unwrap()
+	}
+	if wetBulbTempFErr == nil {
+		weatherData["wet_bulb_f"] = wetBulbTempF.Unwrap()
+	}
+	if wetBulbTempCErr == nil {
+		weatherData["wet_bulb_c"] = wetBulbTempC.Unwrap()
+	}
+
+	// Write to InfluxDB if configured
+	if influxConfigured {
 		if err := retry.Do(func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
 			defer cancel()
 			err := influxWriteAPI.WritePoint(ctx,
 				influxdb2.NewPoint(
-					ecobeeWeatherMeasurementName,
+					config.WeatherMeasurementName,
 					map[string]string{
-						thermostatNameTag: config.EcobeeThermostatName,
-						sourceTag:         source,
+						sourceTag: source,
+						latTag:    strconv.FormatFloat(config.Latitude, 'f', 3, 64),
+						lonTag:    strconv.FormatFloat(config.Longitude, 'f', 3, 64),
 					},
-					map[string]interface{}{
-						"outdoor_temp":                    outdoorTemp.Unwrap(),
-						"outdoor_humidity":                outdoorHumidity.Unwrap(),
-						"outdoor_abs_humidity":            absHumidity.Unwrap(),
-						"barometric_pressure_mb":          pressureMillibar.Unwrap(),
-						"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
-						"dew_point":                       dewpoint.Unwrap(),
-						"wind_speed":                      windSpeedMph.Unwrap(),
-						"wind_bearing":                    windBearing,
-						"visibility_mi":                   visibilityMiles.Unwrap(),
-						"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
-						"wind_chill_f":                    windChillF.Unwrap(),
-					},
+					weatherData,
 					weatherTime,
 				))
 			if err != nil {
@@ -179,68 +292,27 @@ func main() {
 			}
 			return nil
 		}, retry.Attempts(influxAttempts), retry.Delay(influxRetryDelay)); err != nil {
-			log.Printf("Failed to write %s to influx: %s", ecobeeWeatherMeasurementName, err)
+			log.Printf("Failed to write %s to influx: %s", config.WeatherMeasurementName, err)
 		}
 	}
 
-	if err := retry.Do(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
-		defer cancel()
-		fields := map[string]interface{}{
-			"temp_f":                          outdoorTemp.Unwrap(),
-			"temp_c":                          outdoorTemp.C().Unwrap(),
-			"rel_humidity":                    outdoorHumidity.Unwrap(),
-			"abs_humidity":                    absHumidity.Unwrap(),
-			"feels_like_f":                    feelsLikeTemp.Unwrap(),
-			"feels_like_c":                    feelsLikeTemp.C().Unwrap(),
-			"barometric_pressure_mb":          pressureMillibar.Unwrap(),
-			"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
-			"dew_point_f":                     dewpoint.Unwrap(),
-			"dew_point_c":                     dewpoint.C().Unwrap(),
-			"wind_speed_mph":                  windSpeedMph.Unwrap(),
-			"wind_speed_kt":                   windSpeedMph.Knots().Unwrap(),
-			"wind_bearing":                    windBearing,
-			"visibility_mi":                   visibilityMiles.Unwrap(),
-			"recommended_max_indoor_humidity": libwx.IndoorHumidityRecommendationF(outdoorTemp).Unwrap(),
-			"cloud_cover":                     cloudsPercent,
-		}
+	// Publish to MQTT if configured
+	if mqttConfigured {
+		topic := fmt.Sprintf("%s/weather", config.MQTT.TopicRoot)
+		// Add metadata to MQTT payload
+		weatherData["source"] = source
+		weatherData["latitude"] = config.Latitude
+		weatherData["longitude"] = config.Longitude
+		weatherData["timestamp"] = weatherTime.Unix()
 
-		if heatIdxFErr == nil {
-			fields["heat_index_f"] = heatIdxF.Unwrap()
-		}
-		if heatIdxCErr == nil {
-			fields["heat_index_c"] = heatIdxC.Unwrap()
-		}
-		if windChillFErr == nil {
-			fields["wind_chill_f"] = windChillF.Unwrap()
-		}
-		if windChillCErr == nil {
-			fields["wind_chill_c"] = windChillC.Unwrap()
-		}
-		if wetBulbTempFErr == nil {
-			fields["wet_bulb_f"] = wetBulbTempF.Unwrap()
-		}
-		if wetBulbTempCErr == nil {
-			fields["wet_bulb_c"] = wetBulbTempC.Unwrap()
-		}
-
-		err := influxWriteAPI.WritePoint(ctx,
-			influxdb2.NewPoint(
-				config.WeatherMeasurementName,
-				map[string]string{
-					sourceTag: source,
-					latTag:    strconv.FormatFloat(config.Latitude, 'f', 3, 64),
-					lonTag:    strconv.FormatFloat(config.Longitude, 'f', 3, 64),
-				},
-				fields,
-				weatherTime,
-			))
+		payload, err := json.Marshal(weatherData)
 		if err != nil {
-			return err
+			log.Printf("Failed to marshal weather data for MQTT: %s", err)
+		} else {
+			if token := mqttClient.Publish(topic, 0, false, payload); token.Wait() && token.Error() != nil {
+				log.Printf("Failed to publish weather to MQTT: %s", token.Error())
+			}
 		}
-		return nil
-	}, retry.Attempts(influxAttempts), retry.Delay(influxRetryDelay)); err != nil {
-		log.Printf("Failed to write %s to influx: %s", config.WeatherMeasurementName, err)
 	}
 
 	// Pollution: https://openweathermap.org/api/air-pollution
@@ -283,39 +355,65 @@ func main() {
 			aqiUs.AQI, aqiUsParticulates.AQI, polData.Components.Co, polData.Components.No, polData.Components.No2, polData.Components.O3, polData.Components.So2, polData.Components.Pm25, polData.Components.Pm10, polData.Components.Nh3)
 	}
 
-	if err := retry.Do(func() error {
-		ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
-		defer cancel()
-		err := influxWriteAPI.WritePoint(ctx,
-			influxdb2.NewPoint(
-				config.PollutionMeasurementName,
-				map[string]string{
-					sourceTag: source,
-					latTag:    strconv.FormatFloat(config.Latitude, 'f', 3, 64),
-					lonTag:    strconv.FormatFloat(config.Longitude, 'f', 3, 64),
-				},
-				map[string]interface{}{
-					"aqi_1_5":        polData.Main.Aqi,
-					"aqi_us_pm":      aqiUsParticulates.AQI,
-					"aqi_us_pm_name": aqiUsParticulates.Index.Name,
-					"aqi_us":         aqiUs.AQI,
-					"aqi_us_name":    aqiUs.Index.Name,
-					"co":             polData.Components.Co,
-					"no":             polData.Components.No,
-					"no2":            polData.Components.No2,
-					"o3":             polData.Components.O3,
-					"so2":            polData.Components.So2,
-					"pm25":           polData.Components.Pm25,
-					"pm10":           polData.Components.Pm10,
-					"nh3":            polData.Components.Nh3,
-				},
-				time.Unix(int64(polData.Dt), 0),
-			))
-		if err != nil {
-			return err
+	// Prepare pollution data
+	pollutionData := map[string]interface{}{
+		"aqi_1_5":        polData.Main.Aqi,
+		"aqi_us_pm":      aqiUsParticulates.AQI,
+		"aqi_us_pm_name": aqiUsParticulates.Index.Name,
+		"aqi_us":         aqiUs.AQI,
+		"aqi_us_name":    aqiUs.Index.Name,
+		"co":             polData.Components.Co,
+		"no":             polData.Components.No,
+		"no2":            polData.Components.No2,
+		"o3":             polData.Components.O3,
+		"so2":            polData.Components.So2,
+		"pm25":           polData.Components.Pm25,
+		"pm10":           polData.Components.Pm10,
+		"nh3":            polData.Components.Nh3,
+	}
+	pollutionTime := time.Unix(int64(polData.Dt), 0)
+
+	// Write to InfluxDB if configured
+	if influxConfigured {
+		if err := retry.Do(func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), influxTimeout)
+			defer cancel()
+			err := influxWriteAPI.WritePoint(ctx,
+				influxdb2.NewPoint(
+					config.PollutionMeasurementName,
+					map[string]string{
+						sourceTag: source,
+						latTag:    strconv.FormatFloat(config.Latitude, 'f', 3, 64),
+						lonTag:    strconv.FormatFloat(config.Longitude, 'f', 3, 64),
+					},
+					pollutionData,
+					pollutionTime,
+				))
+			if err != nil {
+				return err
+			}
+			return nil
+		}, retry.Attempts(influxAttempts), retry.Delay(influxRetryDelay)); err != nil {
+			log.Printf("Failed to write %s to influx: %s", config.PollutionMeasurementName, err)
 		}
-		return nil
-	}, retry.Attempts(influxAttempts), retry.Delay(influxRetryDelay)); err != nil {
-		log.Printf("Failed to write %s to influx: %s", config.PollutionMeasurementName, err)
+	}
+
+	// Publish to MQTT if configured
+	if mqttConfigured {
+		topic := fmt.Sprintf("%s/pollution", config.MQTT.TopicRoot)
+		// Add metadata to MQTT payload
+		pollutionData["source"] = source
+		pollutionData["latitude"] = config.Latitude
+		pollutionData["longitude"] = config.Longitude
+		pollutionData["timestamp"] = pollutionTime.Unix()
+
+		payload, err := json.Marshal(pollutionData)
+		if err != nil {
+			log.Printf("Failed to marshal pollution data for MQTT: %s", err)
+		} else {
+			if token := mqttClient.Publish(topic, 0, false, payload); token.Wait() && token.Error() != nil {
+				log.Printf("Failed to publish pollution to MQTT: %s", token.Error())
+			}
+		}
 	}
 }

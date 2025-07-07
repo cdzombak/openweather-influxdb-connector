@@ -12,5 +12,14 @@
   "influx_password": "",
   "influx_token": "",
   "influx_org": "",
-  "influx_health_check_disabled": false
+  "influx_health_check_disabled": false,
+  "mqtt": {
+    "enabled": false,
+    "server": "192.168.1.2",
+    "port": 1883,
+    "username": "",
+    "password": "",
+    "topic_root": "ecobee",
+    "timeout": 3
+  }
 }
