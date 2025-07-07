@@ -126,6 +126,7 @@ func main() {
 	pressureMillibar := libwx.PressureMb(wx.Main.Pressure)
 	outdoorHumidity := libwx.ClampedRelHumidity(wx.Main.Humidity) // int, in %
 	dewpoint := libwx.DewPointF(outdoorTemp, outdoorHumidity)
+	absHumidity := libwx.AbsHumidityFromRelF(outdoorTemp, outdoorHumidity)
 	windSpeedMph := libwx.SpeedMph(wx.Wind.Speed)
 	windBearing := wx.Wind.Deg
 	visibilityMeters := libwx.Meter(wx.Visibility)
@@ -136,8 +137,8 @@ func main() {
 
 	if *printData {
 		fmt.Printf("Conditions at %s:\n", weatherTime)
-		fmt.Printf("\ttemperature: %.1f degF\n\tpressure: %.0f mb\n\thumidity: %d%%\n\tdew point: %.1f degF\n\twind: %.0f at %.1f mph\n\tvisibility: %.1f miles\n\tcloud cover: %d%%",
-			outdoorTemp, pressureMillibar, outdoorHumidity, dewpoint, windBearing, windSpeedMph, visibilityMiles, cloudsPercent)
+		fmt.Printf("\ttemperature: %.1f degF\n\tpressure: %.0f mb\n\thumidity: %d%%\n\tabsolute humidity: %.2f g/m³\n\tdew point: %.1f degF\n\twind: %.0f at %.1f mph\n\tvisibility: %.1f miles\n\tcloud cover: %d%%",
+			outdoorTemp, pressureMillibar, outdoorHumidity, absHumidity, dewpoint, windBearing, windSpeedMph, visibilityMiles, cloudsPercent)
 	}
 
 	heatIdxF, heatIdxFErr := libwx.HeatIndexFWithValidation(outdoorTemp, outdoorHumidity)
@@ -161,6 +162,7 @@ func main() {
 					map[string]interface{}{
 						"outdoor_temp":                    outdoorTemp.Unwrap(),
 						"outdoor_humidity":                outdoorHumidity.Unwrap(),
+						"outdoor_abs_humidity":            absHumidity.Unwrap(),
 						"barometric_pressure_mb":          pressureMillibar.Unwrap(),
 						"barometric_pressure_inHg":        pressureMillibar.InHg().Unwrap(),
 						"dew_point":                       dewpoint.Unwrap(),
@@ -188,6 +190,7 @@ func main() {
 			"temp_f":                          outdoorTemp.Unwrap(),
 			"temp_c":                          outdoorTemp.C().Unwrap(),
 			"rel_humidity":                    outdoorHumidity.Unwrap(),
+			"abs_humidity":                    absHumidity.Unwrap(),
 			"feels_like_f":                    feelsLikeTemp.Unwrap(),
 			"feels_like_c":                    feelsLikeTemp.C().Unwrap(),
 			"barometric_pressure_mb":          pressureMillibar.Unwrap(),
