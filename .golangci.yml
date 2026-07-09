@@ -1,8 +1,14 @@
+---
 version: "2"
 linters:
+  # gocritic is not part of the default linter set; without this it would never
+  # run, and the disabled-checks setting below would have no effect.
+  enable:
+    - gocritic
   settings:
     gocritic:
       disabled-checks:
+        # main() defers cancel() before calling log.Fatalf, by design
         - exitAfterDefer
   exclusions:
     generated: lax
