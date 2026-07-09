@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -31,6 +32,11 @@ const (
 	latTag                       = "latitude"
 	lonTag                       = "longitude"
 	ecobeeWeatherMeasurementName = "ecobee_weather"
+
+	// values recorded in the wet_bulb_method field, describing which formula
+	// produced the wet bulb temperature for a given data point.
+	wetBulbMethodSadeghi = "sadeghi2013_at_pressure"
+	wetBulbMethodStull   = "stull2011_sea_level"
 )
 
 // MQTTConfig describes the MQTT configuration.
@@ -44,11 +50,40 @@ type MQTTConfig struct {
 	Timeout   int    `json:"timeout"`
 }
 
+// stationPressure converts sea level pressure to station pressure at the given
+// elevation, via the barometric formula. It uses the observed temperature
+// rather than a standard atmosphere assumption.
+func stationPressure(seaLevel libwx.PressureMb, elevationM float64, temp libwx.TempC) libwx.PressureMb {
+	lapse := 0.0065 * elevationM
+	ratio := 1.0 - lapse/(temp.Unwrap()+lapse+273.15)
+	return libwx.PressureMb(seaLevel.Unwrap() * math.Pow(ratio, 5.257))
+}
+
+// wetBulb calculates the wet bulb temperature, preferring the pressure-aware
+// Sadeghi et al. 2013 formula. That requires a true station pressure, and
+// supports a narrower input range (-17 to 40 degrees C) than the sea level
+// Stull 2011 formula; when either condition is unmet, this falls back to Stull.
+// The method actually used is returned, to be recorded alongside the value.
+//
+// station must be nil unless it is a genuine station pressure. Sea level
+// pressure is not a valid substitute: passing it would yield a value that looks
+// pressure-corrected but is not.
+func wetBulb(temp libwx.TempC, rh libwx.RelHumidity, station *libwx.PressureMb) (libwx.TempC, string, error) {
+	if station != nil {
+		if result, err := libwx.WetBulbCAtPressure(temp, rh, *station); err == nil {
+			return result, wetBulbMethodSadeghi, nil
+		}
+	}
+	result, err := libwx.WetBulbC(temp, rh)
+	return result, wetBulbMethodStull, err
+}
+
 // Config describes the configuration for the openweather-influxdb-connector program.
 type Config struct {
 	APIKey                        string     `json:"api_key"`
 	Latitude                      float64    `json:"lat"`
 	Longitude                     float64    `json:"lon"`
+	ElevationM                    *float64   `json:"elevation_m,omitempty"`
 	InfluxServer                  string     `json:"influx_server"`
 	InfluxOrg                     string     `json:"influx_org,omitempty"`
 	InfluxUser                    string     `json:"influx_user,omitempty"`
@@ -178,6 +213,18 @@ func main() {
 	// nb. OpenWeatherMap reports pressure in hPa regardless of unit setting; hPa == millibar
 	pressureMillibar := libwx.PressureMb(wx.Main.Pressure)
 	outdoorHumidity := libwx.ClampedRelHumidity(wx.Main.Humidity) // int, in %
+
+	// stationPressureMb is nil when no true station pressure can be determined,
+	// ie. OpenWeatherMap omitted grnd_level and no elevation_m is configured.
+	// pressureMillibar is sea level pressure and is not a substitute for it.
+	var stationPressureMb *libwx.PressureMb
+	if wx.Main.GrndLevel > 0 {
+		p := libwx.PressureMb(wx.Main.GrndLevel)
+		stationPressureMb = &p
+	} else if config.ElevationM != nil {
+		p := stationPressure(pressureMillibar, *config.ElevationM, outdoorTemp.C())
+		stationPressureMb = &p
+	}
 	dewpoint := libwx.DewPointF(outdoorTemp, outdoorHumidity)
 	absHumidity := libwx.AbsHumidityFromRelF(outdoorTemp, outdoorHumidity)
 	windSpeedMph := libwx.SpeedMph(wx.Wind.Speed)
@@ -188,18 +235,28 @@ func main() {
 	// TODO(cdzombak): record weather condition codes from wx.Weather
 	//                 see https://openweathermap.org/weather-conditions#Weather-Condition-Codes-2
 
+	wetBulbTempC, wetBulbMethod, wetBulbErr := wetBulb(outdoorTemp.C(), outdoorHumidity, stationPressureMb)
+
 	if *printData {
 		fmt.Printf("Conditions at %s:\n", weatherTime)
 		fmt.Printf("\ttemperature: %.1f degF\n\tpressure: %.0f mb\n\thumidity: %d%%\n\tabsolute humidity: %.2f g/m³\n\tdew point: %.1f degF\n\twind: %.0f at %.1f mph\n\tvisibility: %.1f miles\n\tcloud cover: %d%%",
 			outdoorTemp, pressureMillibar, outdoorHumidity, absHumidity, dewpoint, windBearing, windSpeedMph, visibilityMiles, cloudsPercent)
+		stationPressureDesc := "none (falling back to sea level formula)"
+		if stationPressureMb != nil {
+			stationPressureDesc = fmt.Sprintf("%.1f mb", stationPressureMb.Unwrap())
+		}
+		fmt.Printf("\n\tstation pressure: %s\n", stationPressureDesc)
+		if wetBulbErr == nil {
+			fmt.Printf("\twet bulb: %.2f degF / %.2f degC (via %s)\n", wetBulbTempC.F(), wetBulbTempC, wetBulbMethod)
+		} else {
+			fmt.Printf("\twet bulb: unavailable (%s)\n", wetBulbErr)
+		}
 	}
 
 	heatIdxF, heatIdxFErr := libwx.HeatIndexFWithValidation(outdoorTemp, outdoorHumidity)
 	heatIdxC, heatIdxCErr := libwx.HeatIndexCWithValidation(outdoorTemp.C(), outdoorHumidity)
 	windChillF, windChillFErr := libwx.WindChillFWithValidation(outdoorTemp, windSpeedMph)
 	windChillC, windChillCErr := libwx.WindChillCWithValidation(outdoorTemp.C(), windSpeedMph)
-	wetBulbTempF, wetBulbTempFErr := libwx.WetBulbF(outdoorTemp, outdoorHumidity)
-	wetBulbTempC, wetBulbTempCErr := libwx.WetBulbC(outdoorTemp.C(), outdoorHumidity)
 
 	if config.WriteEcobeeWeatherMeasurement {
 		ecobeeData := map[string]interface{}{
@@ -272,11 +329,10 @@ func main() {
 	if windChillCErr == nil {
 		weatherData["wind_chill_c"] = windChillC.Unwrap()
 	}
-	if wetBulbTempFErr == nil {
-		weatherData["wet_bulb_f"] = wetBulbTempF.Unwrap()
-	}
-	if wetBulbTempCErr == nil {
+	if wetBulbErr == nil {
+		weatherData["wet_bulb_f"] = wetBulbTempC.F().Unwrap()
 		weatherData["wet_bulb_c"] = wetBulbTempC.Unwrap()
+		weatherData["wet_bulb_method"] = wetBulbMethod
 	}
 
 	// Write to InfluxDB if configured

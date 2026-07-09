@@ -23,8 +23,10 @@ Configuration is provided by a JSON file, which contains the following fields:
 - `wx_measurement_name`: Name of the weather measurement to write to InfluxDB.
 - `pollution_measurement_name`: Name of the pollution measurement to write to InfluxDB.
 - `lat`, `lon`: The location to look up weather for.
+- `elevation_m`: _(optional)_ The location's elevation, in meters. Used to improve the accuracy of the wet bulb temperature calculation; see [Wet bulb temperature](#wet-bulb-temperature) below.
 
 #### InfluxDB Configuration
+
 
 - `influx_server`: InfluxDB server.
 - `influx_bucket`: InfluxDB bucket.
@@ -47,6 +49,12 @@ Configuration is provided by a JSON file, which contains the following fields:
 **Note:** At least one output (InfluxDB or MQTT) must be configured. You can enable both to send data to multiple destinations.
 
 A sample config file is included in this repository to help you get started: [`config.example.json`](https://github.com/cdzombak/openweather-influxdb-connector/blob/main/config.example.json).
+
+### Wet bulb temperature
+
+Wet bulb temperature is calculated with the pressure-dependent [Sadeghi et al. 2013](https://journals.ametsoc.org/view/journals/atot/30/8/jtech-d-12-00191_1.xml) formula when station pressure is known — taken from OpenWeatherMap's `grnd_level`, or derived from `pressure` and `elevation_m`. Otherwise, or when the temperature is outside that formula's -17°C to 40°C range, it falls back to the sea level [Stull 2011](https://journals.ametsoc.org/view/journals/apme/50/11/jamc-d-11-0143.1.xml) formula. (OpenWeatherMap's `pressure` is *sea level* pressure, so it is not used as a stand-in for station pressure.)
+
+The `wet_bulb_method` field records which formula produced each data point: `sadeghi2013_at_pressure` or `stull2011_sea_level`.
 
 ### Compatibility with [ecobee_influx_connector](https://github.com/cdzombak/ecobee_influx_connector)
 
