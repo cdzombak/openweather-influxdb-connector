@@ -27,7 +27,6 @@ Configuration is provided by a JSON file, which contains the following fields:
 
 #### InfluxDB Configuration
 
-
 - `influx_server`: InfluxDB server.
 - `influx_bucket`: InfluxDB bucket.
 - `influx_user`, `influx_password`: InfluxDB credentials.
